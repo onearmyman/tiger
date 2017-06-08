@@ -543,7 +543,7 @@ type
   TigerState* = object
     data: Block
     registers: TigerDigest
-    total: int
+    total: int64
     off: int
 
   Word = int64
@@ -640,7 +640,7 @@ proc reset*(result: var TigerState) =
 proc process*(state: var TigerState, data: openArray[char]) =
   var
     i = 0
-    blockOff = (BlockSize + state.total) mod BlockSize
+    blockOff = ((BlockSize + state.total) mod BlockSize).int
   if blockOff > 0:
     let newOff = min(BlockSize, blockOff+data.len)
     while blockOff < newOff:
@@ -666,8 +666,9 @@ proc process*(state: var TigerState, data: openArray[char]) =
 proc digest*(state: var TigerState): TigerDigest =
   ## Generate tiger hash digest.
   var temp: Block
-  var j = (BlockSize + state.total) mod BlockSize
-  copyMem(addr temp, addr state.data, j)
+  var j = ((BlockSize + state.total) mod BlockSize).int
+  for i in 0..j:
+    temp[i] = state.data[i]
 
   when system.cpuEndian == bigEndian:
     raise newException(SystemError, "big endian support not implemented")
@@ -682,12 +683,14 @@ proc digest*(state: var TigerState): TigerDigest =
       inc j
     state.compress(temp)
     j = 0
-  while j < 56:
-    temp[j] = 0.char
-    inc j
+    while j < 56:
+      temp[j] = 0.char
+      inc j
 
   var total = state.total shl 3
-  copyMem(addr temp[56], addr total, 8)
+  for i in 0..7:
+    temp[56+i] = (total shr (8*i) and 0xFF).char
+
   state.compress(temp)
   result = state.registers
 
