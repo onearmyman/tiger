@@ -541,6 +541,7 @@ type
   TigerDigest* = array[3, int64]
 
   TigerState* = object
+    ## Tiger hash state
     data: Block
     registers: TigerDigest
     total: int64
@@ -625,19 +626,16 @@ proc compress(state: var TigerState, data: var Block) =
   state.registers = [
     (a xor aa), (b - bb), (c + cc) ]
 
-proc init*(result: var TigerState) =
-  ## Initialize tiger hash function.
+proc reset*(result: var TigerState) =
+  ## Reset hash state, must be called inititally.
   result.registers = [
     0x0123456789ABCDEF, 0xFEDCBA9876543210, 0xF096A5B4C3B2E187 ]
-  result.total = 0
-
-proc reset*(result: var TigerState) =
-  ## Reset tiger hash function.
   for i in result.data.low .. result.data.high:
     result.data[i] = 0.char
-  init result
+  result.total = 0
 
 proc process*(state: var TigerState, data: openArray[char]) =
+  ## Process data
   var
     i = 0
     blockOff = ((BlockSize + state.total) mod BlockSize).int
@@ -664,7 +662,8 @@ proc process*(state: var TigerState, data: openArray[char]) =
   inc(state.total, data.len)
 
 proc digest*(state: var TigerState): TigerDigest =
-  ## Generate tiger hash digest.
+  ## Generate digest of data, this does not affect internal hash state
+  ## and thus addition data may be processed.
   var temp: Block
   var j = ((BlockSize + state.total) mod BlockSize).int
   for i in 0..j:
@@ -699,7 +698,7 @@ proc tiger*(data: string): TigerDigest =
   var
     state: TigerState
     data = data
-  init state
+  reset state
   state.process(data)
   state.digest()
 
@@ -712,7 +711,7 @@ when isMainModule:
       toHex(d[1] shr 32, 8) & toHex(d[1], 8) & " " &
       toHex(d[2] shr 32, 8) & toHex(d[2], 8)
 
-  template test(data: string, control: string) =
+  template testTiger(data: string, control: string) =
     echo "\"", data, "\""
     let res = $tiger(data)
     test res:
@@ -720,27 +719,27 @@ when isMainModule:
 
   suite "Hash of short strings":
 
-    test("", "24F0130C63AC9332 16166E76B1BB925F F373DE2D49584E7A")
+    testTiger("", "24F0130C63AC9332 16166E76B1BB925F F373DE2D49584E7A")
 
-    test("abc", "F258C1E88414AB2A 527AB541FFC5B8BF 935F7B951C132951")
+    testTiger("abc", "F258C1E88414AB2A 527AB541FFC5B8BF 935F7B951C132951")
 
-    test("Tiger", "9F00F599072300DD 276ABB38C8EB6DEC 37790C116F9D2BDF")
+    testTiger("Tiger", "9F00F599072300DD 276ABB38C8EB6DEC 37790C116F9D2BDF")
 
   suite "Hash of 512-bit strings":
 
-    test("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-", "87FB2A9083851CF7 470D2CF810E6DF9E B586445034A5A386")
+    testTiger("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-", "87FB2A9083851CF7 470D2CF810E6DF9E B586445034A5A386")
 
-    test("ABCDEFGHIJKLMNOPQRSTUVWXYZ=abcdefghijklmnopqrstuvwxyz+0123456789", "467DB80863EBCE48 8DF1CD1261655DE9 57896565975F9197")
+    testTiger("ABCDEFGHIJKLMNOPQRSTUVWXYZ=abcdefghijklmnopqrstuvwxyz+0123456789", "467DB80863EBCE48 8DF1CD1261655DE9 57896565975F9197")
 
-    test("Tiger - A Fast New Hash Function, by Ross Anderson and Eli Biham", "0C410A042968868A 1671DA5A3FD29A72 5EC1E457D3CDB303")
+    testTiger("Tiger - A Fast New Hash Function, by Ross Anderson and Eli Biham", "0C410A042968868A 1671DA5A3FD29A72 5EC1E457D3CDB303")
 
   suite "Hash of two-block strings strings":
 
-    test("Tiger - A Fast New Hash Function, by Ross Anderson and Eli Biham, proceedings of Fast Software Encryption 3, Cambridge.", "EBF591D5AFA655CE 7F22894FF87F54AC 89C811B6B0DA3193")
+    testTiger("Tiger - A Fast New Hash Function, by Ross Anderson and Eli Biham, proceedings of Fast Software Encryption 3, Cambridge.", "EBF591D5AFA655CE 7F22894FF87F54AC 89C811B6B0DA3193")
 
-    test("Tiger - A Fast New Hash Function, by Ross Anderson and Eli Biham, proceedings of Fast Software Encryption 3, Cambridge, 1996.", "3D9AEB03D1BD1A63 57B2774DFD6D5B24 DD68151D503974FC")
+    testTiger("Tiger - A Fast New Hash Function, by Ross Anderson and Eli Biham, proceedings of Fast Software Encryption 3, Cambridge, 1996.", "3D9AEB03D1BD1A63 57B2774DFD6D5B24 DD68151D503974FC")
 
-    test("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-", "00B83EB4E53440C5 76AC6AAEE0A74858 25FD15E70A59FFE4")
+    testTiger("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-", "00B83EB4E53440C5 76AC6AAEE0A74858 25FD15E70A59FFE4")
 
   suite "Hash of a 64K-byte string":
     var big = newString 65536
@@ -750,3 +749,148 @@ when isMainModule:
     let res = $tiger(big)
     test res:
       check(res == control)
+
+type
+  ThexDigest* = distinct TigerDigest
+
+  Thex* = object
+    ## Tiger tree hash
+    hash: TigerState
+    leaves: seq[TigerDigest]
+    buf: array[1025, char]
+    bufOff: int
+
+proc reset*(thex: var Thex) =
+  ## Reset THEX state must be called inititally.
+  if thex.leaves.isNil:
+    thex.leaves = newSeq[TigerDigest]()
+  else:
+    thex.leaves.setLen(0)
+  thex.buf[0] = '\0'
+  thex.bufOff = 1
+
+proc process*(thex: var Thex, data: string) =
+  ## Process leaf data.
+  var i: int
+
+  if thex.bufOff > 1:
+    let newOff = min(thex.buf.high, thex.bufOff+data.len)
+    while (thex.bufOff <= newOff) and (i <= data.high):
+      thex.buf[thex.bufOff] = data[i]
+      inc thex.bufOff
+      inc i
+
+    if thex.bufOff > thex.buf.high:
+      reset thex.hash
+      thex.hash.process(thex.buf)
+      let leaf = thex.hash.digest
+      thex.leaves.add(leaf)
+      thex.bufOff = 1
+
+  while (data.len - i) >= 1024:
+    reset thex.hash
+    thex.hash.process(@['\0'])
+    var chunk = data[i..i+1023]
+    thex.hash.process(chunk)
+    let leaf = thex.hash.digest()
+    thex.leaves.add(leaf)
+    i.inc(1024)
+
+  while i < data.len:
+    thex.buf[thex.bufOff] = data[i]
+    inc thex.bufOff
+    inc i
+
+proc process(hash: var TigerState; digest: TigerDigest) =
+  hash.process(cast[array[24, char]](digest))
+
+proc digest*(thex: var Thex): ThexDigest =
+  ## Generate root digest, no more data may be processed after this operation
+  if thex.bufOff > 1:
+    reset thex.hash
+    thex.hash.process(thex.buf[0..thex.bufOff-1])
+    let leaf = thex.hash.digest()
+    thex.leaves.add(leaf)
+
+  while thex.leaves.len > 1:
+    let modulo = thex.leaves.len mod 2
+
+    var i, j: int
+    while j < (thex.leaves.high - modulo):
+      reset thex.hash
+      thex.hash.process(@['\1'])
+      thex.hash.process(thex.leaves[j])
+      inc j
+      thex.hash.process(thex.leaves[j])
+      inc j
+      let node = thex.hash.digest()
+      thex.leaves[i] = node
+      inc i
+
+    if modulo == 1:
+      # copy the unbalanced node over
+      thex.leaves[i] = thex.leaves[j]
+      inc i
+
+    thex.leaves.setLen(i)
+
+  if thex.leaves.len == 1:
+    result = thex.leaves[0].ThexDigest
+    thex.leaves.setLen(0)
+  else:
+    reset thex.hash
+    thex.hash.process(@['\0'])
+    result = thex.hash.digest().ThexDigest
+
+when isMainModule:
+
+  import base32, unittest
+
+  proc `$`*(d: ThexDigest): string =
+    result = base32.encode cast[array[24, char]](d)
+
+  test "The empty (zero-length) file":
+    var thex: Thex
+    reset thex
+    let test = $thex.digest()
+    check(test == "LWPNACQDBZRYXW3VHJVCJ64QBZNGHOHHHZWCLNQ")
+
+  test "A file with a single zero byte":
+    var thex: Thex
+    reset thex
+    thex.process("\0")
+    let test = $thex.digest()
+    check(test == "VK54ZIEEVTWNAUI5D5RDFIL37LX2IQNSTAXFKSA")
+
+  test "A file with 1024 'A' characters":
+    var thex: Thex
+    reset thex
+    for i in 1 .. (1024 div 4):
+      thex.process("AAAA")
+    let test = $thex.digest()
+    check(test == "L66Q4YVNAFWVS23X2HJIRA5ZJ7WXR3F26RSASFA")
+
+
+  test "A file with 1025 'A' characters":
+    var thex: Thex
+    reset thex
+    for i in 1 .. (1025 div 5):
+      thex.process("AAAAA")
+    let test = $thex.digest()
+    check(test == "PZMRYHGY6LTBEH63ZWAHDORHSYTLO4LEFUIKHWY")
+
+  test "A file with 3072 'A' characters":
+    var thex: Thex
+    reset thex
+    for i in 1 .. (3072 div 4):
+      thex.process("AAAA")
+    let test = $thex.digest()
+    check(test == "VUGTDEB5E3RVBHJWEPT2LY2O6XHZQFFRGDNZBSQ")
+
+  test "A file with 30449 'A' characters":
+    var thex: Thex
+    reset thex
+    for i in 1 .. 30449:
+      thex.process("A")
+    let test = $thex.digest()
+    check(test == "ZUFAL7VPTVKLLLNZUYVR6MW6PZZVVONX2RBHFMY")
